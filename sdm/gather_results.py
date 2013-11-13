@@ -49,3 +49,5 @@ def main():
         import matplotlib.pyplot as plt
         plot_results(info)
         plt.show()
+
+main()
