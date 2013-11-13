@@ -19,13 +19,16 @@ def gather(fnames):
     return pd.DataFrame(info).set_index(['div_func', 'K']).sort_index()
 
 
-def plot_results(info):
-    import matplotlib.pyplot as plt
+def plot_results(info, ax=None):
+    if ax is None:
+        import matplotlib.pyplot as plt
+        ax = plt.gca()
 
     for div_func, vals in info.groupby(level='div_func'):
         vals = vals.reset_index()
-        plt.plot(vals.K, vals.accuracy, label=div_func, marker='o')
-    plt.legend(loc='lower right')
+        ax.plot(vals.K, vals.accuracy, label=div_func, marker='o')
+    ax.legend(loc='lower right')
+    return ax
 
 
 def main():
@@ -37,6 +40,7 @@ def main():
 
     g = parser.add_mutually_exclusive_group()
     g.add_argument('--plot', action='store_true', default=True)
+    g.add_argument('--plot-to', dest='plot')
     g.add_argument('--no-plot', dest='plot', action='store_false')
     args = parser.parse_args()
 
@@ -46,8 +50,15 @@ def main():
         info.to_csv(args.save)
 
     if args.plot:
-        import matplotlib.pyplot as plt
-        plot_results(info)
-        plt.show()
+        if args.plot is not True:
+            import matplotlib
+            matplotlib.use('Agg')
 
+        ax = plot_results(info)
+
+        import matplotlib.pyplot as plt
+        if args.plot is True:
+            plt.show()
+        else:
+            plt.savefig(args.plot)
 main()
