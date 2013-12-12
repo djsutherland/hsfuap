@@ -5,17 +5,17 @@ import numpy as np
 import sdm
 
 def convert_file(inp, out, factors=[.25, 1, 4]):
-    for div in inp.keys():
-        if div == '_meta':
+    for df in inp.keys():
+        if df == '_meta':
             continue
-        for k in inp[div].keys():
-            divs = inp[div][k][()]
-            med = np.median(d[np.triu_indices_from(d)])
+        for k in inp[df].keys():
+            divs = inp[df][k][()]
+            med = np.median(divs[np.triu_indices_from(divs)])
 
             for factor in factors:
                 name = 'median * {}'.format(factor)
-                print '/'.join(div, k, name)
-                g = out.require_group(div).require_group(k)
+                print '/'.join(df, k, name)
+                g = out.require_group(df).require_group(k)
                 if name not in g:
                     g[name] = sdm.sdm.make_km(divs, med * factor)
                 else:
