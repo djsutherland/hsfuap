@@ -74,7 +74,7 @@ def _run_nys(W, pick, start_n=5, max_n=None):
             n_evaled.append(extra_evaled.imag if np.iscomplex(extra_evaled)
                             else n + extra_evaled)
             rmse.append(nys_error(W, picked))
-            pbar.update(n)
+            pbar.update(min(n, max_n))
     except Exception as e:
         import traceback
         traceback.print_exc()
