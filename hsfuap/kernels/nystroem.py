@@ -62,7 +62,7 @@ def _run_nys(W, pick, start_n=5, max_n=None):
     rmse = [nys_error(W, picked)]
 
     # could do this faster with woodbury, probably
-    pbar = progress(maxval=picked.size).start()
+    pbar = progress(maxval=max_n).start()
     pbar.update(n)
     try:
         while n_picked[-1] < max_n:
