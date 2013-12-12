@@ -145,7 +145,7 @@ def nys_kmeans(K, x, n):
 
 def run_kmeans(K, X, start_n=5, step_size=1):
     # NOTE: not actually iterative, unlike the others
-    ns = progress(range(start_n, K.shape[0] + 1, step_size))
+    ns = progress()(range(start_n, K.shape[0] + 1, step_size))
     rmses = [nys_kmeans(K, X, n) for n in ns]
     return pd.DataFrame({'n_picked': ns, 'n_evaled': ns, 'rmse': rmses})
 
