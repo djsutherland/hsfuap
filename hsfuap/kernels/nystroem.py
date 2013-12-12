@@ -135,6 +135,7 @@ def run_leverage_est(W, start_n=5, step_size=1):
 
     return _run_nys(W, pick_by_leverage, start_n=start_n)
 
+
 def nys_kmeans(K, x, n):
     # NOTE: doesn't make sense to do this iteratively
     from vlfeat import vl_kmeans
@@ -145,8 +146,8 @@ def nys_kmeans(K, x, n):
 
 def run_kmeans(K, X, start_n=5, step_size=1):
     # NOTE: not actually iterative, unlike the others
-    ns = progress()(range(start_n, K.shape[0] + 1, step_size))
-    rmses = [nys_kmeans(K, X, n) for n in ns]
+    ns = range(start_n, K.shape[0] + 1, step_size)
+    rmses = [nys_kmeans(K, X, n) for n in progress()(ns)]
     return pd.DataFrame({'n_picked': ns, 'n_evaled': ns, 'rmse': rmses})
 
 
