@@ -151,6 +151,71 @@ def run_kmeans(K, X, start_n=5, step_size=1):
     return pd.DataFrame({'n_picked': ns, 'n_evaled': ns, 'rmse': rmses})
 
 
+def _do_nys(K, picked, out):
+    notpicked = ~picked
+    A = K[np.ix_(picked, picked)]
+    B = K[np.ix_(picked, notpicked)]
+    
+    out[np.ix_(picked, picked)] = A
+    out[np.ix_(picked, notpicked)] = B
+    out[np.ix_(notpicked, picked)] = B.T
+    out[np.ix_(notpicked, notpicked)] = B.T.dot(np.linalg.pinv(A).dot(B))
+
+def run_smga_frob(K, start_n=5, eval_size=59, step_size=1):
+    assert step_size == 1
+    
+    # choose an initial couple of points uniformly at random
+    N = K.shape[0]
+    
+    picked = np.zeros(N, dtype='bool')
+    picked[np.random.choice(N, start_n, replace=False)] = True
+    evaled = picked.copy()
+
+    n = picked.sum()
+    n_picked = [n]
+    n_evaled = [n]
+
+    est = np.empty_like(K)
+    err = np.empty_like(K)
+    _do_nys(K, picked, est)
+    np.subtract(K, est, out=err)
+    rmse = [np.linalg.norm(err, 'fro')]
+    
+    err_prods = np.empty_like(err)
+    
+    pbar = progress(maxval=picked.size).start()
+    pbar.update(n)
+
+    try:
+        while not picked.all():
+            pool = pick_up_to((~picked).nonzero()[0], n=eval_size)
+            evaled[pool] = True
+            
+            np.dot(err, err, out=err_prods)  # each entry is  err[i].dot(err[j])
+            imp_factors = np.array([
+                (err_prods[i, :] ** 2).sum() / (err[i] ** 2).sum()
+                for i in pool
+            ])
+            i = pool[np.argmax(imp_factors)]
+            
+            picked[i] = True
+            n_picked.append(picked.sum())
+            n_evaled.append(evaled.sum())
+            print (~picked).sum(), '\r',
+
+            _do_nys(K, picked, est)
+            np.subtract(K, est, out=err)
+            rmse.append(np.linalg.norm(err, 'fro'))
+
+            pbar.update(n_picked[-1])
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+    
+    pbar.finish()
+    return pd.DataFrame({'n_picked': n_picked, 'n_evaled': n_evaled, 'rmse': rmse})
+
+
 
 def main():
     import argparse
