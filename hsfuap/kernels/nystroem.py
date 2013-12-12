@@ -154,8 +154,8 @@ def run_kmeans(K, X, start_n=5, step_size=1):
 def main():
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument('--start-n', type=int)
-    parser.add_argument('--step-size', type=int)
+    parser.add_argument('--start-n', type=int, default=5)
+    parser.add_argument('--step-size', type=int, default=1)
     parser.add_argument('--method', '-m', required=True)
     parser.add_argument('--kernel-file', '-k', required=True)
     parser.add_argument('--kernel-path', '-K')
