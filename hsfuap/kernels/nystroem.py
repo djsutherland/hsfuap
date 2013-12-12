@@ -252,7 +252,8 @@ def main():
     n, m = kernel.shape
     assert n == m
 
-    d = method(kernel, start_n=args.start_n, max_n=None, step_size=args.step_size)
+    d = method(kernel, start_n=args.start_n, max_n=args.max_n,
+               step_size=args.step_size)
     d.to_csv(args.outfile)
 
 if __name__ == '__main__':
