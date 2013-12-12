@@ -109,6 +109,19 @@ def run_adapt_full(W, start_n=5, max_n=None, step_size=1):
         return (pick_up_to(probs.size, p=probs, n=step_size), n*1j)
     return _run_nys(W, pick, start_n=start_n, max_n=max_n)
 
+def run_adapt_full_lev(W, start_n=5, max_n=None, step_size=1):
+    n = W.shape[0]
+    def pick(picked):
+        uc, _, _ = np.linalg.svd(W[:, picked], full_matrices=False)
+        err = W - uc.dot(uc.T).dot(W)
+        err_u, _, _ = np.linalg.svd(err)
+        probs = np.zeros(picked.size)
+        # using this rank for leverage scores is kind of arbitrary
+        probs[~picked] = (err_u[~picked, :picked.sum()] ** 2).sum(axis=1)
+        probs /= probs.sum()
+        return (pick_up_to(probs.size, p=probs, n=step_size), n*1j)
+    return _run_nys(W, pick, start_n=start_n, max_n=max_n)
+
 
 def run_leverage_full_iter(W, start_n=5, max_n=None, step_size=1):
     # NOTE: not quite the full leverage-based algorithm.
