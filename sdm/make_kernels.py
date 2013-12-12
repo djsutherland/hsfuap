@@ -14,7 +14,7 @@ def convert_file(inp, out, factors=[.25, 1, 4]):
 
             for factor in factors:
                 name = 'median * {}'.format(factor)
-                print '/'.join(df, k, name)
+                print '/'.join((df, k, name))
                 g = out.require_group(df).require_group(k)
                 if name not in g:
                     g[name] = sdm.sdm.make_km(divs, med * factor)
