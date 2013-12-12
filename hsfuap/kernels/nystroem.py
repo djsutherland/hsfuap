@@ -4,6 +4,8 @@ from __future__ import division
 import numpy as np
 import pandas as pd
 
+from ..misc import progress
+
 
 def leverages_of_unknown(A, B, rcond=1e-15):
     # TODO: definitely a better way to do this
@@ -44,7 +46,6 @@ def nys_error(K, picked):
     return np.sqrt(2 * Berr + Cerr)
 
 
-
 def _run_nys(W, pick, start_n=5):
     # choose an initial couple of points uniformly at random
     picked = np.zeros(W.shape[0], dtype='bool')
@@ -56,6 +57,8 @@ def _run_nys(W, pick, start_n=5):
     rmse = [nys_error(W, picked)]
 
     # could do this faster with woodbury, probably
+    pbar = progress(maxval=picked.size).start()
+    pbar.update(n)
     try:
         while not picked.all():
             indices, extra_evaled = pick(picked)
@@ -66,10 +69,12 @@ def _run_nys(W, pick, start_n=5):
             n_evaled.append(extra_evaled.imag if np.iscomplex(extra_evaled)
                             else n + extra_evaled)
             rmse.append(nys_error(W, picked))
+            pbar.update(n)
     except Exception as e:
         import traceback
         traceback.print_exc()
 
+    pbar.finish()
     return pd.DataFrame(
         {'n_picked': n_picked, 'n_evaled': n_evaled, 'rmse': rmse})
 
@@ -155,7 +160,7 @@ def main():
     parser.add_argument('outfile')
     args = parser.parse_args()
 
-    method = locals()['run_{}'.format(args.method)]
+    method = globals()['run_{}'.format(args.method)]
 
     if args.kernel_path:
         import h5py
@@ -167,7 +172,7 @@ def main():
     n, m = kernel.shape
     assert n == m
 
-    d = method(kernel, start_n=start_n, step_size=step_size)
+    d = method(kernel, start_n=args.start_n, step_size=args.step_size)
     d.to_csv(args.outfile)
 
 if __name__ == '__main__':
