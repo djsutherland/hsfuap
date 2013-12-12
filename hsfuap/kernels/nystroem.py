@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 from __future__ import division
 
+from functools import partial
+
 import numpy as np
 import pandas as pd
 
@@ -157,10 +159,15 @@ def main():
     parser.add_argument('--method', '-m', required=True)
     parser.add_argument('--kernel-file', '-k', required=True)
     parser.add_argument('--kernel-path', '-K')
+    parser.add_argument('--feats-path')
     parser.add_argument('outfile')
     args = parser.parse_args()
 
     method = globals()['run_{}'.format(args.method)]
+    if args.method == 'kmeans':
+        with np.load(args.feats_path) as d:
+            X = np.sqrt(d['hists'])
+        method = partial(method, X=X)
 
     if args.kernel_path:
         import h5py
