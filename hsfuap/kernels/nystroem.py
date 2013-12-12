@@ -48,11 +48,14 @@ def nys_error(K, picked):
     return np.sqrt(2 * Berr + Cerr)
 
 
-def _run_nys(W, pick, start_n=5):
+def _run_nys(W, pick, start_n=5, max_n=None):
     # choose an initial couple of points uniformly at random
     picked = np.zeros(W.shape[0], dtype='bool')
     picked[np.random.choice(W.shape[0], start_n, replace=False)] = True
     n = picked.sum()
+
+    if max_n is None:
+        max_n = W.shape[0]
 
     n_picked = [n]
     n_evaled = [n]
@@ -62,7 +65,7 @@ def _run_nys(W, pick, start_n=5):
     pbar = progress(maxval=picked.size).start()
     pbar.update(n)
     try:
-        while not picked.all():
+        while n_picked[-1] < max_n:
             indices, extra_evaled = pick(picked)
             picked[indices] = True
             n = picked.sum()
@@ -88,14 +91,14 @@ def pick_up_to(ary, n, p=None):
     return np.random.choice(ary, replace=False, size=min(n, ary.shape[0]), p=p)
 
 
-def run_uniform(W, start_n=5, step_size=1):
+def run_uniform(W, start_n=5, max_n=None, step_size=1):
     return _run_nys(
         W,
         lambda picked: (pick_up_to((~picked).nonzero()[0], n=step_size), 0),
-        start_n=start_n)
+        start_n=start_n, max_n=max_n)
 
 
-def run_adapt_full(W, start_n=5, step_size=1):
+def run_adapt_full(W, start_n=5, max_n=None, step_size=1):
     n = W.shape[0]
     def pick(picked):
         uc, _, _ = np.linalg.svd(W[:, picked], full_matrices=False)
@@ -104,10 +107,10 @@ def run_adapt_full(W, start_n=5, step_size=1):
         probs[~picked] = (err[~picked, :] ** 2).sum(axis=1)
         probs /= probs.sum()
         return (pick_up_to(probs.size, p=probs, n=step_size), n*1j)
-    return _run_nys(W, pick, start_n=start_n)
+    return _run_nys(W, pick, start_n=start_n, max_n=max_n)
 
 
-def run_leverage_full_iter(W, start_n=5, step_size=1):
+def run_leverage_full_iter(W, start_n=5, max_n=None, step_size=1):
     # NOTE: not quite the full leverage-based algorithm.
     # That chooses leverage scores for the final rank, where
     # this does it iteratively. Not clear how different those are.
@@ -120,9 +123,9 @@ def run_leverage_full_iter(W, start_n=5, step_size=1):
         levs /= levs.sum()
         return (pick_up_to(levs.shape[0], p=levs, n=step_size), n*1j)
 
-    return _run_nys(W, pick_by_leverage, start_n=start_n)
+    return _run_nys(W, pick_by_leverage, start_n=start_n, max_n=max_n)
 
-def run_leverage_est(W, start_n=5, step_size=1):
+def run_leverage_est(W, start_n=5, max_n=None, step_size=1):
     # Like above, but pick based on the leverage scores of \hat{W} instead
     # of W, so it doesn't use any knowledge we don't have.
     def pick_by_leverage(picked):
@@ -133,7 +136,7 @@ def run_leverage_est(W, start_n=5, step_size=1):
         unpicked_idx = pick_up_to(dist.shape[0], p=dist, n=step_size)
         return ((~picked).nonzero()[0][unpicked_idx], 0)
 
-    return _run_nys(W, pick_by_leverage, start_n=start_n)
+    return _run_nys(W, pick_by_leverage, start_n=start_n, max_n=max_n)
 
 
 def nys_kmeans(K, x, n):
@@ -144,9 +147,11 @@ def nys_kmeans(K, x, n):
     picked = FLANNIndex().nn(x, centers, num_neighbors=1)[0]
     return nys_error(K, picked)
 
-def run_kmeans(K, X, start_n=5, step_size=1):
+def run_kmeans(K, X, start_n=5, max_n=None, step_size=1):
     # NOTE: not actually iterative, unlike the others
-    ns = range(start_n, K.shape[0] + 1, step_size)
+    if max_n is None:
+        max_n = K.shape[0]
+    ns = range(start_n, max_n + 1, step_size)
     rmses = [nys_kmeans(K, X, n) for n in progress()(ns)]
     return pd.DataFrame({'n_picked': ns, 'n_evaled': ns, 'rmse': rmses})
 
@@ -161,11 +166,13 @@ def _do_nys(K, picked, out):
     out[np.ix_(notpicked, picked)] = B.T
     out[np.ix_(notpicked, notpicked)] = B.T.dot(np.linalg.pinv(A).dot(B))
 
-def run_smga_frob(K, start_n=5, eval_size=59, step_size=1):
+def run_smga_frob(K, start_n=5, max_n=None, eval_size=59, step_size=1):
     assert step_size == 1
     
     # choose an initial couple of points uniformly at random
     N = K.shape[0]
+    if max_n is None:
+        max_n = N
     
     picked = np.zeros(N, dtype='bool')
     picked[np.random.choice(N, start_n, replace=False)] = True
@@ -183,11 +190,11 @@ def run_smga_frob(K, start_n=5, eval_size=59, step_size=1):
     
     err_prods = np.empty_like(err)
     
-    pbar = progress(maxval=picked.size).start()
+    pbar = progress(maxval=max_n).start()
     pbar.update(n)
 
     try:
-        while not picked.all():
+        while n_picked[-1] < max_n:
             pool = pick_up_to((~picked).nonzero()[0], n=eval_size)
             evaled[pool] = True
             
@@ -201,7 +208,6 @@ def run_smga_frob(K, start_n=5, eval_size=59, step_size=1):
             picked[i] = True
             n_picked.append(picked.sum())
             n_evaled.append(evaled.sum())
-            print (~picked).sum(), '\r',
 
             _do_nys(K, picked, est)
             np.subtract(K, est, out=err)
@@ -221,6 +227,7 @@ def main():
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('--start-n', type=int, default=5)
+    parser.add_argument('--max-n', type=int, default=None)
     parser.add_argument('--step-size', type=int, default=1)
     parser.add_argument('--method', '-m', required=True)
     parser.add_argument('--kernel-file', '-k', required=True)
@@ -245,7 +252,7 @@ def main():
     n, m = kernel.shape
     assert n == m
 
-    d = method(kernel, start_n=args.start_n, step_size=args.step_size)
+    d = method(kernel, start_n=args.start_n, max_n=None, step_size=args.step_size)
     d.to_csv(args.outfile)
 
 if __name__ == '__main__':
