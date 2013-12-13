@@ -25,6 +25,10 @@ def leverages_of_unknown(A, B, rcond=1e-15):
     A_vals[~zeros] **= -1
     inv_sqrt_A = np.dot(A_vecs, A_vals.reshape(-1, 1) * A_vecs.T)
 
+    # better way to do this:
+    #   x^T A^{-1} x = || L \ x ||^2
+    # where L is the Cholesky factor of A
+    # can probably figure out how to use that here
     X = inv_sqrt_A.dot(B)
     S = A + X.dot(X.T)
     Y = np.linalg.pinv(S)
