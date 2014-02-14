@@ -156,6 +156,35 @@ def run_leverage_est(W, start_n=5, max_n=None, step_size=1):
     return _run_nys(W, pick_by_leverage, start_n=start_n, max_n=max_n)
 
 
+def pick_det_greedy(picked, W, samp):
+    # TODO: could build this up across runs blockwise
+    chol_W_picked = linalg.cholesky(W[np.ix_(picked, picked)], lower=True)
+    # det_W_picked = np.prod(np.diagonal(chol_W_picked)) ** 2
+    # don't need this since it's the same for everyone
+    
+    dets = np.zeros(n)
+    tmps = linalg.solve_triangular(chol_W_picked, W[np.ix_(picked, ~picked)], lower=True)
+    dets[~picked] = W[~picked, ~picked] - np.sum(tmps ** 2, axis=0)  # * det_W_picked
+    
+    if samp:
+        return (pick_up_to(picked.size, p=dets / dets.sum(), n=1), 0)
+    else:
+        return (np.argmax(dets), 0)
+    
+
+def run_determinant_greedy_samp(W, start_n=5, step_size=1):
+    assert step_size == 1
+    f = partial(pick_det_greedy, W=W, samp=True)
+    f.__name__ = 'pick_det_greedy_samp'
+    return _run_nys(W, f, start_n=start_n)
+
+def run_determinant_greedy(W, start_n=5, step_size=1):
+    assert step_size == 1
+    f = partial(pick_det_greedy, W=W, samp=False)
+    f.__name__ = 'pick_det_greedy'
+    return _run_nys(W, f, start_n=start_n)
+
+
 def nys_kmeans(K, x, n):
     # NOTE: doesn't make sense to do this iteratively
     from vlfeat import vl_kmeans
