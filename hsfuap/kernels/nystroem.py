@@ -5,6 +5,7 @@ from functools import partial
 
 import numpy as np
 import pandas as pd
+from scipy import linalg
 
 from ..misc import progress
 
