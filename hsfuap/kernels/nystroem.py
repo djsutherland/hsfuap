@@ -162,16 +162,16 @@ def pick_det_greedy(picked, W, samp):
     chol_W_picked = linalg.cholesky(W[np.ix_(picked, picked)], lower=True)
     # det_W_picked = np.prod(np.diagonal(chol_W_picked)) ** 2
     # don't need this since it's the same for everyone
-    
-    dets = np.zeros(n)
+
+    dets = np.zeros(picked.size)
     tmps = linalg.solve_triangular(chol_W_picked, W[np.ix_(picked, ~picked)], lower=True)
     dets[~picked] = W[~picked, ~picked] - np.sum(tmps ** 2, axis=0)  # * det_W_picked
-    
+
     if samp:
         return (pick_up_to(picked.size, p=dets / dets.sum(), n=1), 0)
     else:
         return (np.argmax(dets), 0)
-    
+
 
 def run_determinant_greedy_samp(W, start_n=5, max_n=None, step_size=1):
     assert step_size == 1
@@ -205,7 +205,7 @@ def _do_nys(K, picked, out):
     notpicked = ~picked
     A = K[np.ix_(picked, picked)]
     B = K[np.ix_(picked, notpicked)]
-    
+
     out[np.ix_(picked, picked)] = A
     out[np.ix_(picked, notpicked)] = B
     out[np.ix_(notpicked, picked)] = B.T
@@ -213,12 +213,12 @@ def _do_nys(K, picked, out):
 
 def run_smga_frob(K, start_n=5, max_n=None, eval_size=59, step_size=1):
     assert step_size == 1
-    
+
     # choose an initial couple of points uniformly at random
     N = K.shape[0]
     if max_n is None:
         max_n = N
-    
+
     picked = np.zeros(N, dtype='bool')
     picked[np.random.choice(N, start_n, replace=False)] = True
     evaled = picked.copy()
@@ -232,9 +232,9 @@ def run_smga_frob(K, start_n=5, max_n=None, eval_size=59, step_size=1):
     _do_nys(K, picked, est)
     np.subtract(K, est, out=err)
     rmse = [np.linalg.norm(err, 'fro')]
-    
+
     err_prods = np.empty_like(err)
-    
+
     pbar = progress(maxval=max_n).start()
     pbar.update(n)
 
@@ -242,14 +242,14 @@ def run_smga_frob(K, start_n=5, max_n=None, eval_size=59, step_size=1):
         while n_picked[-1] < max_n:
             pool = pick_up_to((~picked).nonzero()[0], n=eval_size)
             evaled[pool] = True
-            
+
             np.dot(err, err, out=err_prods)  # each entry is  err[i].dot(err[j])
             imp_factors = np.array([
                 (err_prods[i, :] ** 2).sum() / (err[i] ** 2).sum()
                 for i in pool
             ])
             i = pool[np.argmax(imp_factors)]
-            
+
             picked[i] = True
             n_picked.append(picked.sum())
             n_evaled.append(evaled.sum())
@@ -262,7 +262,7 @@ def run_smga_frob(K, start_n=5, max_n=None, eval_size=59, step_size=1):
     except Exception as e:
         import traceback
         traceback.print_exc()
-    
+
     pbar.finish()
     return pd.DataFrame({'n_picked': n_picked, 'n_evaled': n_evaled, 'rmse': rmse})
 
