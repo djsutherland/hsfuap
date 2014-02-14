@@ -172,17 +172,15 @@ def pick_det_greedy(picked, W, samp):
         return (np.argmax(dets), 0)
     
 
-def run_determinant_greedy_samp(W, start_n=5, step_size=1):
+def run_determinant_greedy_samp(W, start_n=5, max_n=None, step_size=1):
     assert step_size == 1
     f = partial(pick_det_greedy, W=W, samp=True)
-    f.__name__ = 'pick_det_greedy_samp'
-    return _run_nys(W, f, start_n=start_n)
+    return _run_nys(W, f, start_n=start_n, max_n=max_n)
 
-def run_determinant_greedy(W, start_n=5, step_size=1):
+def run_determinant_greedy(W, start_n=5, max_n=None, step_size=1):
     assert step_size == 1
     f = partial(pick_det_greedy, W=W, samp=False)
-    f.__name__ = 'pick_det_greedy'
-    return _run_nys(W, f, start_n=start_n)
+    return _run_nys(W, f, start_n=start_n, max_n=max_n)
 
 
 def nys_kmeans(K, x, n):
