@@ -9,28 +9,8 @@ import pandas as pd
 from ..misc import progress
 
 
-def leverages_of_unknown(A, B, rcond=1e-15):
-    # TODO: definitely a better way to do this
-    # can you compute  A^{-1/2} B  without eigendecomposing A?
-    #   (is solve(sqrtm(A), B) better?)
-
-    # get pinv(sqrtm(A))
-    # assume that A is actually psd; any negative eigs are noise/numerical error
-    A_vals, A_vecs = np.linalg.eigh(A)
-    np.maximum(A_vals, 0, out=A_vals)
-    np.sqrt(A_vals, out=A_vals)
-    cutoff = np.max(A_vals) * rcond
-    zeros = A_vals < cutoff
-    A_vals[zeros] = 0
-    A_vals[~zeros] **= -1
-    inv_sqrt_A = np.dot(A_vecs, A_vals.reshape(-1, 1) * A_vecs.T)
-
-    X = inv_sqrt_A.dot(B)
-    S = A + X.dot(X.T)
-    Y = np.linalg.pinv(S)
-
-    return np.einsum('ki,kl,li->i', X, Y, X)
-
+################################################################################
+### Nystroem framework
 
 def nys_error(K, picked):
     A = K[np.ix_(picked, picked)]
@@ -75,13 +55,14 @@ def _run_nys(W, pick, start_n=5, max_n=None):
                             else n + extra_evaled)
             rmse.append(nys_error(W, picked))
             pbar.update(min(n, max_n))
-    except Exception as e:
+    except Exception:
         import traceback
         traceback.print_exc()
 
     pbar.finish()
     return pd.DataFrame(
         {'n_picked': n_picked, 'n_evaled': n_evaled, 'rmse': rmse})
+
 
 def pick_up_to(ary, n, p=None):
     if np.shape(ary) == () and ary > 0:
@@ -91,12 +72,18 @@ def pick_up_to(ary, n, p=None):
     return np.random.choice(ary, replace=False, size=min(n, ary.shape[0]), p=p)
 
 
+################################################################################
+### Uniform
+
 def run_uniform(W, start_n=5, max_n=None, step_size=1):
     return _run_nys(
         W,
         lambda picked: (pick_up_to((~picked).nonzero()[0], n=step_size), 0),
         start_n=start_n, max_n=max_n)
 
+
+################################################################################
+### Deshpande-style adaptation
 
 def run_adapt_full(W, start_n=5, max_n=None, step_size=1):
     n = W.shape[0]
@@ -106,8 +93,35 @@ def run_adapt_full(W, start_n=5, max_n=None, step_size=1):
         probs = np.zeros(picked.size)
         probs[~picked] = (err[~picked, :] ** 2).sum(axis=1)
         probs /= probs.sum()
-        return (pick_up_to(probs.size, p=probs, n=step_size), n*1j)
+        return (pick_up_to(probs.size, p=probs, n=step_size), n * 1j)
     return _run_nys(W, pick, start_n=start_n, max_n=max_n)
+
+
+################################################################################
+### Leverages-based stuff
+
+def leverages_of_unknown(A, B, rcond=1e-15):
+    # NOTE: definitely a better way to do this
+    # can you compute  A^{-1/2} B  without eigendecomposing A?
+    #   (is solve(sqrtm(A), B) better?)
+
+    # get pinv(sqrtm(A))
+    # assume that A is actually psd; any negative eigs are noise/numerical error
+    A_vals, A_vecs = np.linalg.eigh(A)
+    np.maximum(A_vals, 0, out=A_vals)
+    np.sqrt(A_vals, out=A_vals)
+    cutoff = np.max(A_vals) * rcond
+    zeros = A_vals < cutoff
+    A_vals[zeros] = 0
+    A_vals[~zeros] **= -1
+    inv_sqrt_A = np.dot(A_vecs, A_vals.reshape(-1, 1) * A_vecs.T)
+
+    X = inv_sqrt_A.dot(B)
+    S = A + X.dot(X.T)
+    Y = np.linalg.pinv(S)
+
+    return np.einsum('ki,kl,li->i', X, Y, X)
+
 
 def run_adapt_full_lev(W, start_n=5, max_n=None, step_size=1):
     n = W.shape[0]
@@ -119,7 +133,7 @@ def run_adapt_full_lev(W, start_n=5, max_n=None, step_size=1):
         # using this rank for leverage scores is kind of arbitrary
         probs[~picked] = (err_u[~picked, :picked.sum()] ** 2).sum(axis=1)
         probs /= probs.sum()
-        return (pick_up_to(probs.size, p=probs, n=step_size), n*1j)
+        return (pick_up_to(probs.size, p=probs, n=step_size), n * 1j)
     return _run_nys(W, pick, start_n=start_n, max_n=max_n)
 
 
@@ -134,9 +148,10 @@ def run_leverage_full_iter(W, start_n=5, max_n=None, step_size=1):
         levs = np.zeros(n)
         levs[~picked] = (u[~picked, :picked.sum()] ** 2).sum(axis=1)
         levs /= levs.sum()
-        return (pick_up_to(levs.shape[0], p=levs, n=step_size), n*1j)
+        return (pick_up_to(levs.shape[0], p=levs, n=step_size), n * 1j)
 
     return _run_nys(W, pick_by_leverage, start_n=start_n, max_n=max_n)
+
 
 def run_leverage_est(W, start_n=5, max_n=None, step_size=1):
     # Like above, but pick based on the leverage scores of \hat{W} instead
@@ -152,6 +167,9 @@ def run_leverage_est(W, start_n=5, max_n=None, step_size=1):
     return _run_nys(W, pick_by_leverage, start_n=start_n, max_n=max_n)
 
 
+################################################################################
+### K-means
+
 def nys_kmeans(K, x, n):
     # NOTE: doesn't make sense to do this iteratively
     from vlfeat import vl_kmeans
@@ -159,6 +177,7 @@ def nys_kmeans(K, x, n):
     centers = vl_kmeans(x, num_centers=n)
     picked = FLANNIndex().nn(x, centers, num_neighbors=1)[0]
     return nys_error(K, picked)
+
 
 def run_kmeans(K, X, start_n=5, max_n=None, step_size=1):
     # NOTE: not actually iterative, unlike the others
@@ -169,24 +188,28 @@ def run_kmeans(K, X, start_n=5, max_n=None, step_size=1):
     return pd.DataFrame({'n_picked': ns, 'n_evaled': ns, 'rmse': rmses})
 
 
+################################################################################
+### SMGA
+
 def _do_nys(K, picked, out):
     notpicked = ~picked
     A = K[np.ix_(picked, picked)]
     B = K[np.ix_(picked, notpicked)]
-    
+
     out[np.ix_(picked, picked)] = A
     out[np.ix_(picked, notpicked)] = B
     out[np.ix_(notpicked, picked)] = B.T
     out[np.ix_(notpicked, notpicked)] = B.T.dot(np.linalg.pinv(A).dot(B))
 
+
 def run_smga_frob(K, start_n=5, max_n=None, eval_size=59, step_size=1):
     assert step_size == 1
-    
+
     # choose an initial couple of points uniformly at random
     N = K.shape[0]
     if max_n is None:
         max_n = N
-    
+
     picked = np.zeros(N, dtype='bool')
     picked[np.random.choice(N, start_n, replace=False)] = True
     evaled = picked.copy()
@@ -200,9 +223,9 @@ def run_smga_frob(K, start_n=5, max_n=None, eval_size=59, step_size=1):
     _do_nys(K, picked, est)
     np.subtract(K, est, out=err)
     rmse = [np.linalg.norm(err, 'fro')]
-    
+
     err_prods = np.empty_like(err)
-    
+
     pbar = progress(maxval=max_n).start()
     pbar.update(n)
 
@@ -210,14 +233,14 @@ def run_smga_frob(K, start_n=5, max_n=None, eval_size=59, step_size=1):
         while n_picked[-1] < max_n:
             pool = pick_up_to((~picked).nonzero()[0], n=eval_size)
             evaled[pool] = True
-            
+
             np.dot(err, err, out=err_prods)  # each entry is  err[i].dot(err[j])
             imp_factors = np.array([
                 (err_prods[i, :] ** 2).sum() / (err[i] ** 2).sum()
                 for i in pool
             ])
             i = pool[np.argmax(imp_factors)]
-            
+
             picked[i] = True
             n_picked.append(picked.sum())
             n_evaled.append(evaled.sum())
@@ -227,14 +250,16 @@ def run_smga_frob(K, start_n=5, max_n=None, eval_size=59, step_size=1):
             rmse.append(np.linalg.norm(err, 'fro'))
 
             pbar.update(n_picked[-1])
-    except Exception as e:
+    except Exception:
         import traceback
         traceback.print_exc()
-    
+
     pbar.finish()
-    return pd.DataFrame({'n_picked': n_picked, 'n_evaled': n_evaled, 'rmse': rmse})
+    return pd.DataFrame(
+        {'n_picked': n_picked, 'n_evaled': n_evaled, 'rmse': rmse})
 
 
+################################################################################
 
 def main():
     import argparse
@@ -268,6 +293,7 @@ def main():
     d = method(kernel, start_n=args.start_n, max_n=args.max_n,
                step_size=args.step_size)
     d.to_csv(args.outfile)
+
 
 if __name__ == '__main__':
     main()
