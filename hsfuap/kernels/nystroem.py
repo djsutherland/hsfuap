@@ -5,6 +5,7 @@ from functools import partial
 
 import numpy as np
 import pandas as pd
+from scipy import linalg
 
 from ..misc import progress
 
@@ -123,6 +124,9 @@ def leverages_of_unknown(A, B, rcond=1e-15):
     A_vals[~zeros] **= -1
     inv_sqrt_A = np.dot(A_vecs, A_vals.reshape(-1, 1) * A_vecs.T)
 
+    # better way to do this:
+    #   x^T A^{-1} x = ||L \ x||^2 where L = chol(A)
+    # can probably figure out how to use that here.
     X = inv_sqrt_A.dot(B)
     S = A + X.dot(X.T)
     Y = np.linalg.pinv(S)
@@ -175,6 +179,39 @@ def run_leverage_est(W, start_n=5, max_n=None, step_size=1):
         return (~picked).nonzero()[0][unpicked_idx]
 
     return _run_nys(W, pick_by_leverage, start_n=start_n, max_n=max_n)
+
+
+################################################################################
+### Determinant-based stuff
+
+def pick_det_greedy(picked, seen_pts, K, samp):
+    # TODO: could build this up across runs blockwise
+    chol_K_picked = linalg.cholesky(K[np.ix_(picked, picked)], lower=True)
+    # det_K_picked = np.prod(np.diagonal(chol_K_picked)) ** 2
+    #   don't need this: it's the same for everyone
+
+    dets = np.zeros(picked.size)
+    tmps = linalg.solve_triangular(
+        chol_K_picked, K[np.ix_(picked, ~picked)], lower=True)
+    dets[~picked] = K[~picked, ~picked] - np.sum(tmps ** 2, axis=0)
+    #  * det_K_picked
+
+    if samp:
+        return pick_up_to(picked.size, p=dets / dets.sum(), n=1)
+    else:
+        return np.argmax(dets)
+
+
+def run_determinant_greedy_samp(K, start_n=5, max_n=None, step_size=1):
+    assert step_size == 1
+    f = partial(pick_det_greedy, K=K, samp=True)
+    return _run_nys(K, f, start_n=start_n)
+
+
+def run_determinant_greedy(K, start_n=5, max_n=None, step_size=1):
+    assert step_size == 1
+    f = partial(pick_det_greedy, K=K, samp=False)
+    return _run_nys(K, f, start_n=start_n)
 
 
 ################################################################################
