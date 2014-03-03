@@ -30,15 +30,20 @@ def nys_error(K, picked):
 
 def _run_nys(W, pick, start_n=5, max_n=None):
     # choose an initial couple of points uniformly at random
-    picked = np.zeros(W.shape[0], dtype='bool')
+    N = W.shape[0]
+    picked = np.zeros(W.shape[0], dtype=bool)
     picked[np.random.choice(W.shape[0], start_n, replace=False)] = True
     n = picked.sum()
+
+    seen_pts = np.zeros((N, N), dtype=bool)
+    seen_pts[picked, :] = True
+    seen_pts[:, picked] = True
 
     if max_n is None:
         max_n = W.shape[0]
 
     n_picked = [n]
-    n_evaled = [n]
+    n_evaled = [seen_pts.sum()]
     rmse = [nys_error(W, picked)]
 
     # could do this faster with woodbury, probably
@@ -46,13 +51,15 @@ def _run_nys(W, pick, start_n=5, max_n=None):
     pbar.update(n)
     try:
         while n_picked[-1] < max_n:
-            indices, extra_evaled = pick(picked)
+            indices = pick(picked, seen_pts)
             picked[indices] = True
             n = picked.sum()
 
+            seen_pts[picked, :] = True
+            seen_pts[:, picked] = True
+
             n_picked.append(n)
-            n_evaled.append(extra_evaled.imag if np.iscomplex(extra_evaled)
-                            else n + extra_evaled)
+            n_evaled.append(seen_pts.sum())
             rmse.append(nys_error(W, picked))
             pbar.update(min(n, max_n))
     except Exception:
@@ -76,24 +83,24 @@ def pick_up_to(ary, n, p=None):
 ### Uniform
 
 def run_uniform(W, start_n=5, max_n=None, step_size=1):
-    return _run_nys(
-        W,
-        lambda picked: (pick_up_to((~picked).nonzero()[0], n=step_size), 0),
-        start_n=start_n, max_n=max_n)
+    def pick(picked, seen_pts):
+        return pick_up_to((~picked).nonzero()[0], n=step_size)
+    return _run_nys(W, pick, start_n=start_n, max_n=max_n)
 
 
 ################################################################################
 ### Deshpande-style adaptation
 
 def run_adapt_full(W, start_n=5, max_n=None, step_size=1):
-    n = W.shape[0]
-    def pick(picked):
+    def pick(picked, seen_pts):
         uc, _, _ = np.linalg.svd(W[:, picked], full_matrices=False)
         err = W - uc.dot(uc.T).dot(W)
         probs = np.zeros(picked.size)
         probs[~picked] = (err[~picked, :] ** 2).sum(axis=1)
         probs /= probs.sum()
-        return (pick_up_to(probs.size, p=probs, n=step_size), n * 1j)
+
+        seen_pts.fill(True)
+        return pick_up_to(probs.size, p=probs, n=step_size)
     return _run_nys(W, pick, start_n=start_n, max_n=max_n)
 
 
@@ -124,8 +131,7 @@ def leverages_of_unknown(A, B, rcond=1e-15):
 
 
 def run_adapt_full_lev(W, start_n=5, max_n=None, step_size=1):
-    n = W.shape[0]
-    def pick(picked):
+    def pick(picked, seen_pts):
         uc, _, _ = np.linalg.svd(W[:, picked], full_matrices=False)
         err = W - uc.dot(uc.T).dot(W)
         err_u, _, _ = np.linalg.svd(err)
@@ -133,7 +139,9 @@ def run_adapt_full_lev(W, start_n=5, max_n=None, step_size=1):
         # using this rank for leverage scores is kind of arbitrary
         probs[~picked] = (err_u[~picked, :picked.sum()] ** 2).sum(axis=1)
         probs /= probs.sum()
-        return (pick_up_to(probs.size, p=probs, n=step_size), n * 1j)
+
+        seen_pts.fill(True)
+        return pick_up_to(probs.size, p=probs, n=step_size)
     return _run_nys(W, pick, start_n=start_n, max_n=max_n)
 
 
@@ -144,11 +152,13 @@ def run_leverage_full_iter(W, start_n=5, max_n=None, step_size=1):
     u, s, v = np.linalg.svd(W)
     n = W.shape[0]
 
-    def pick_by_leverage(picked):
+    def pick_by_leverage(picked, seen_pts):
         levs = np.zeros(n)
         levs[~picked] = (u[~picked, :picked.sum()] ** 2).sum(axis=1)
         levs /= levs.sum()
-        return (pick_up_to(levs.shape[0], p=levs, n=step_size), n * 1j)
+
+        seen_pts.fill(True)
+        return pick_up_to(levs.shape[0], p=levs, n=step_size)
 
     return _run_nys(W, pick_by_leverage, start_n=start_n, max_n=max_n)
 
@@ -156,13 +166,13 @@ def run_leverage_full_iter(W, start_n=5, max_n=None, step_size=1):
 def run_leverage_est(W, start_n=5, max_n=None, step_size=1):
     # Like above, but pick based on the leverage scores of \hat{W} instead
     # of W, so it doesn't use any knowledge we don't have.
-    def pick_by_leverage(picked):
+    def pick_by_leverage(picked, seen_pts):
         levs = leverages_of_unknown(W[np.ix_(picked, picked)],
                                     W[np.ix_(picked, ~picked)])
         assert np.all(np.isfinite(levs))
         dist = levs / levs.sum()
         unpicked_idx = pick_up_to(dist.shape[0], p=dist, n=step_size)
-        return ((~picked).nonzero()[0][unpicked_idx], 0)
+        return (~picked).nonzero()[0][unpicked_idx]
 
     return _run_nys(W, pick_by_leverage, start_n=start_n, max_n=max_n)
 
@@ -181,11 +191,13 @@ def nys_kmeans(K, x, n):
 
 def run_kmeans(K, X, start_n=5, max_n=None, step_size=1):
     # NOTE: not actually iterative, unlike the others
+    N = K.shape[0]
     if max_n is None:
-        max_n = K.shape[0]
-    ns = range(start_n, max_n + 1, step_size)
+        max_n = N
+    ns = np.arange(start_n, max_n + 1, step_size)
     rmses = [nys_kmeans(K, X, n) for n in progress()(ns)]
-    return pd.DataFrame({'n_picked': ns, 'n_evaled': ns, 'rmse': rmses})
+    n_evaled = ns * (2 * N) - ns ** 2
+    return pd.DataFrame({'n_picked': ns, 'n_evaled': n_evaled, 'rmse': rmses})
 
 
 ################################################################################
@@ -210,13 +222,18 @@ def run_smga_frob(K, start_n=5, max_n=None, eval_size=59, step_size=1):
     if max_n is None:
         max_n = N
 
-    picked = np.zeros(N, dtype='bool')
+    picked = np.zeros(N, dtype=bool)
     picked[np.random.choice(N, start_n, replace=False)] = True
-    evaled = picked.copy()
+
+    # TODO: do version of algorithm that estimates error rather than getting the
+    #       full thing.
+    seen_pts = np.ones((N, N), dtype=bool)
+    seen_pts[picked, :] = True
+    seen_pts[:, picked] = True
 
     n = picked.sum()
     n_picked = [n]
-    n_evaled = [n]
+    n_evaled = [seen_pts.sum()]
 
     est = np.empty_like(K)
     err = np.empty_like(K)
@@ -232,7 +249,6 @@ def run_smga_frob(K, start_n=5, max_n=None, eval_size=59, step_size=1):
     try:
         while n_picked[-1] < max_n:
             pool = pick_up_to((~picked).nonzero()[0], n=eval_size)
-            evaled[pool] = True
 
             np.dot(err, err, out=err_prods)  # each entry is  err[i].dot(err[j])
             imp_factors = np.array([
@@ -243,7 +259,7 @@ def run_smga_frob(K, start_n=5, max_n=None, eval_size=59, step_size=1):
 
             picked[i] = True
             n_picked.append(picked.sum())
-            n_evaled.append(evaled.sum())
+            n_evaled.append(seen_pts.sum())
 
             _do_nys(K, picked, est)
             np.subtract(K, est, out=err)
@@ -255,8 +271,9 @@ def run_smga_frob(K, start_n=5, max_n=None, eval_size=59, step_size=1):
         traceback.print_exc()
 
     pbar.finish()
-    return pd.DataFrame(
-        {'n_picked': n_picked, 'n_evaled': n_evaled, 'rmse': rmse})
+    return pd.DataFrame({'n_picked': n_picked,
+                         'n_evaled': [N ** 2] * len(n_picked),
+                         'rmse': rmse})
 
 
 ################################################################################
