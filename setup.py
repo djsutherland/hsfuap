@@ -5,7 +5,12 @@ setup(
     version='0.1.0dev',
     author='Dougal J. Sutherland',
     author_email='dougal@gmail.com',
-    packages=['hsfuap', 'hsfuap.kernels', 'hsfuap.misc', 'hsfuap.sdm'],
+    packages=['hsfuap',
+              'hsfuap.kernels',
+              'hsfuap.misc',
+              'hsfuap.plotting',
+              'hsfuap.sdm',
+    ],
     description='Some miscellaneous utilities I find useful.',
     entry_points={
         'console_scripts': [
