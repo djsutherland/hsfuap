@@ -3,6 +3,7 @@ from __future__ import division
 
 from functools import partial
 import itertools
+import random
 
 import numpy as np
 import pandas as pd
@@ -215,7 +216,7 @@ def run_determinant_greedy(K, start_n=5, max_n=None, step_size=1):
     return _run_nys(K, f, start_n=start_n)
 
 
-def rejection_sample_det(K, n):
+def rejection_sample_det(K, n, max_samps=None):
     # algorithm from section 6.2.1 of Arcolano (2011)
     # in the case where we assume that the diagonal is unity
     # TODO: account for non-one diagonals
@@ -231,13 +232,46 @@ def rejection_sample_det(K, n):
             assert sgn == 1
         return _log_betas[i]
 
-    for n_rejects in itertools.count():
+    it = itertools.count() if max_samps is None else xrange(max_samps)
+    for n_rejects in it:
         proposal = np.random.choice(N, n, replace=False)
         sgn, logdet = np.linalg.slogdet(K[np.ix_(proposal, proposal)])
         assert sgn == 1
         log_prob = logdet - log_beta(proposal.min())
         if np.random.binomial(1, p=np.exp(log_prob)):
             return proposal
+
+    raise ValueError("Didn't accept a sample in {} tries.".format(max_samps))
+
+
+def metropolis_sample_det(K, n, num_iter):
+    N = K.shape[0]
+
+    curr = np.random.choice(N, n, replace=False)
+    proposal = curr.copy()
+    all_inds = set(xrange(N))
+
+    sgn, curr_logdet = np.linalg.slogdet(K[np.ix_(curr, curr)])
+    assert sgn == 1
+
+    choice = np.random.choice
+
+    for _ in xrange(num_iter):
+        i_ind, = choice(n)
+        j, = random.sample(all_inds.difference(proposal), 1)
+        proposal[i_ind] = j
+
+        sgn, prop_logdet = np.linalg.slogdet(K[np.ix_(proposal, proposal)])
+        assert sgn == 1
+
+        if random.random() < np.exp(prop_logdet - curr_logdet):
+            # accept the proposal
+            curr[i_ind] = j
+        else:
+            # make proposal equal to curr again
+            proposal[i_ind] = curr[i_ind]
+
+    return curr
 
 
 ################################################################################
