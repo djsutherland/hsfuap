@@ -186,6 +186,20 @@ def run_leverage_est(W, start_n=5, max_n=None, step_size=1):
 ################################################################################
 ### Determinant-based stuff
 
+# Here, we use the block LU decomposition:
+#  [A, B; C, D] = [I, 0; C*inv(A), I]
+#                 [A, 0; 0, D - C inv(A) B]
+#                 [I, inv(A) B; 0, I]
+#
+# So
+# det([K, v; v', k]) = det([I, 0; v' inv(K), 1])
+#                      det([K, 0; 0, k - v' inv(K) v])
+#                      det([I, inv(K) v; 0, 1])
+#                    = (k - v' inv(K) v) det(K)
+# (and you get the same thing if you try to decompose the other way).
+#
+# So, we plug in K = K(I, I), v = K(I, j), k = K(j, j),
+# and compute v' inv(K) v as ||chol(K) \ v||^2.
 def pick_det_greedy(picked, seen_pts, K, samp):
     # TODO: could build this up across runs blockwise
     chol_K_picked = linalg.cholesky(K[np.ix_(picked, picked)], lower=True)
