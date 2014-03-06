@@ -227,13 +227,13 @@ def pick_det_greedy(picked, seen_pts, K, samp):
 def run_determinant_greedy_samp(K, start_n=5, max_n=None, step_size=1):
     assert step_size == 1
     f = partial(pick_det_greedy, K=K, samp=True)
-    return _run_nys(K, f, start_n=start_n)
+    return _run_nys(K, f, start_n=start_n, max_n=max_n)
 
 
 def run_determinant_greedy(K, start_n=5, max_n=None, step_size=1):
     assert step_size == 1
     f = partial(pick_det_greedy, K=K, samp=False)
-    return _run_nys(K, f, start_n=start_n)
+    return _run_nys(K, f, start_n=start_n, max_n=max_n)
 
 
 def rejection_sample_det(K, n, max_samps=None):
