@@ -47,6 +47,7 @@ def _run_nys(W, pick, start_n=5, max_n=None):
 
     n_picked = [n]
     n_evaled = [seen_pts.sum()]
+    pickeds = [picked.copy()]
     rmse = [nys_error(W, picked)]
 
     # could do this faster with woodbury, probably
@@ -63,6 +64,7 @@ def _run_nys(W, pick, start_n=5, max_n=None):
 
             n_picked.append(n)
             n_evaled.append(seen_pts.sum())
+            pickeds.append(picked.copy())
             rmse.append(nys_error(W, picked))
             pbar.update(min(n, max_n))
     except Exception:
@@ -70,8 +72,12 @@ def _run_nys(W, pick, start_n=5, max_n=None):
         traceback.print_exc()
 
     pbar.finish()
-    return pd.DataFrame(
-        {'n_picked': n_picked, 'n_evaled': n_evaled, 'rmse': rmse})
+    return pd.DataFrame({
+        'n_picked': n_picked,
+        'n_evaled': n_evaled,
+        'rmse': rmse,
+        'picked': pickeds,
+    })
 
 
 def pick_up_to(ary, n, p=None):
