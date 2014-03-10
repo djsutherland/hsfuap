@@ -16,6 +16,7 @@ from ..misc import progress
 ### Nystroem framework
 
 def nys_error(K, picked):
+    assert picked.dtype.kind == 'b'
     A = K[np.ix_(picked, picked)]
     B = K[np.ix_(picked, ~picked)]
     C = K[np.ix_(~picked, ~picked)]
@@ -86,6 +87,27 @@ def pick_up_to(ary, n, p=None):
     if p is not None:
         n = min(n, np.nonzero(p)[0].size)
     return np.random.choice(ary, replace=False, size=min(n, ary.shape[0]), p=p)
+
+
+################################################################################
+### Fake method that gets the lower bound on reconstruction error
+
+def run_lowerbound(K, start_n=5, max_n=None, step_size=1):
+    N = K.shape[0]
+    if max_n is None:
+        max_n = N
+    ns = np.arange(start_n, max_n + 1, step_size)
+
+    # frobenius error of best rank-K reconstruction is
+    # the L2 norm of the vector of K+1 and following singular values.
+    svs = np.r_[np.linalg.svd(K, compute_uv=False), 0]
+    all_rmses = np.sqrt(np.cumsum((svs ** 2)[::-1])[::-1])
+
+    return pd.DataFrame({
+        'n_picked': ns,
+        'n_evaled': N ** 2,
+        'rmse': all_rmses[ns],
+    })
 
 
 ################################################################################
@@ -297,24 +319,73 @@ def metropolis_sample_det(K, n, num_iter):
 ################################################################################
 ### K-means
 
-def nys_kmeans(K, x, n):
-    # NOTE: doesn't make sense to do this iteratively
-    from vlfeat import vl_kmeans
-    from cyflann import FLANNIndex
-    centers = vl_kmeans(x, num_centers=n)
-    picked = FLANNIndex().nn(x, centers, num_neighbors=1)[0]
-    return nys_error(K, picked)
-
-
-def run_kmeans(K, X, start_n=5, max_n=None, step_size=1):
-    # NOTE: not actually iterative, unlike the others
+def _run_nys_noniter(K, pick, start_n=5, max_n=None, step_size=1):
     N = K.shape[0]
     if max_n is None:
         max_n = N
+
     ns = np.arange(start_n, max_n + 1, step_size)
-    rmses = [nys_kmeans(K, X, n) for n in progress()(ns)]
-    n_evaled = ns * (2 * N) - ns ** 2
-    return pd.DataFrame({'n_picked': ns, 'n_evaled': n_evaled, 'rmse': rmses})
+
+    rmses = []
+    pickeds = []
+    n_evaleds = []
+
+    picked = np.zeros(N, dtype=bool)
+
+    for n in progress()(ns):
+        indices, n_evaled = pick(n)
+        picked.fill(False)
+        picked[indices] = True
+        rmse = nys_error(K, picked)
+
+        pickeds.append(picked.copy())
+        n_evaleds.append(n_evaled)
+        rmses.append(rmse)
+
+    return pd.DataFrame({
+        'n_picked': ns,
+        'n_evaled': n_evaleds,
+        'rmse': rmses,
+        'picked': pickeds,
+    })
+
+
+def pick_kmeans(x, n):
+    # NOTE: doesn't make sense to do this iteratively
+    # run k-means clustering
+    from vlfeat import vl_kmeans
+    centers = vl_kmeans(x, num_centers=n)
+
+    # pick points closest to the cluster centers
+    from cyflann import FLANNIndex
+    picked = FLANNIndex().nn(x, centers, num_neighbors=1)[0]
+
+    N = x.shape[0]
+    return picked, N ** 2 - (N - n) ** 2
+
+
+def run_kmeans(K, X, start_n=5, max_n=None, step_size=1):
+    return _run_nys_noniter(K, partial(pick_kmeans, X),
+                            start_n=start_n, max_n=max_n, step_size=step_size)
+
+
+def pick_kernel_kmeans(K, n):
+    from .kmeans import KernelKMeans
+    km = KernelKMeans(n_clusters=n, kernel='precomputed')
+    km.fit(K)
+
+    # find the point closest to each cluster center in kernel space
+    dists = np.zeros((K.shape[0], n))
+    km._compute_dist(K, dists, km.within_distances_, update_within=False)
+    picked = dists.argmin(axis=0)
+
+    N = K.shape[0]
+    return picked, N ** 2
+
+
+def run_kernel_kmeans(K, start_n=5, max_n=None, step_size=1):
+    return _run_nys_noniter(K, partial(pick_kmeans, K),
+                            start_n=start_n, max_n=max_n, step_size=step_size)
 
 
 ################################################################################
@@ -357,6 +428,7 @@ def run_smga_frob(K, start_n=5, max_n=None, eval_size=59, step_size=1):
     _do_nys(K, picked, est)
     np.subtract(K, est, out=err)
     rmse = [np.linalg.norm(err, 'fro')]
+    pickeds = [picked.copy()]
 
     err_prods = np.empty_like(err)
 
@@ -377,6 +449,7 @@ def run_smga_frob(K, start_n=5, max_n=None, eval_size=59, step_size=1):
             picked[i] = True
             n_picked.append(picked.sum())
             n_evaled.append(seen_pts.sum())
+            pickeds.append(picked.copy())
 
             _do_nys(K, picked, est)
             np.subtract(K, est, out=err)
@@ -388,9 +461,12 @@ def run_smga_frob(K, start_n=5, max_n=None, eval_size=59, step_size=1):
         traceback.print_exc()
 
     pbar.finish()
-    return pd.DataFrame({'n_picked': n_picked,
-                         'n_evaled': [N ** 2] * len(n_picked),
-                         'rmse': rmse})
+    return pd.DataFrame({
+        'n_picked': n_picked,
+        'n_evaled': [N ** 2] * len(n_picked),
+        'rmse': rmse,
+        'picked': pickeds,
+    })
 
 
 ################################################################################
