@@ -222,3 +222,15 @@ def make_km(divs, sigma, square=True, destroy=False, negatives_likely=True,
         destroy=True,
         negatives_likely=negatives_likely,
         ret_test_transformer=ret_test_transformer)
+
+
+def get_squared_dists(K, destroy=False):
+    row_norms = np.diagonal(K)
+    if destroy:
+        row_norms = row_norms.copy()  # some numpys have diagonal return a view
+        K *= -2
+    else:
+        K = -2 * K
+    K += row_norms[:, np.newaxis]
+    K += row_norms[np.newaxis, :]
+    return K

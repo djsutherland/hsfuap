@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-from __future__ import division
+from __future__ import division, print_function
 
 from functools import partial
 import itertools
@@ -8,8 +8,10 @@ import random
 import numpy as np
 import pandas as pd
 from scipy import linalg
+from sklearn.metrics.pairwise import euclidean_distances
 
 from ..misc import progress
+from .project import get_squared_dists
 
 
 ################################################################################
@@ -77,6 +79,37 @@ def _run_nys(W, pick, start_n=5, max_n=None):
         'n_picked': n_picked,
         'n_evaled': n_evaled,
         'rmse': rmse,
+        'picked': pickeds,
+    })
+
+
+def _run_nys_noniter(K, pick, start_n=5, max_n=None, step_size=1):
+    N = K.shape[0]
+    if max_n is None:
+        max_n = N
+
+    ns = np.arange(start_n, max_n + 1, step_size)
+
+    rmses = []
+    pickeds = []
+    n_evaleds = []
+
+    picked = np.zeros(N, dtype=bool)
+
+    for n in progress()(ns):
+        indices, n_evaled = pick(n)
+        picked.fill(False)
+        picked[indices] = True
+        rmse = nys_error(K, picked)
+
+        pickeds.append(picked.copy())
+        n_evaleds.append(n_evaled)
+        rmses.append(rmse)
+
+    return pd.DataFrame({
+        'n_picked': ns,
+        'n_evaled': n_evaleds,
+        'rmse': rmses,
         'picked': pickeds,
     })
 
@@ -319,37 +352,6 @@ def metropolis_sample_det(K, n, num_iter):
 ################################################################################
 ### K-means
 
-def _run_nys_noniter(K, pick, start_n=5, max_n=None, step_size=1):
-    N = K.shape[0]
-    if max_n is None:
-        max_n = N
-
-    ns = np.arange(start_n, max_n + 1, step_size)
-
-    rmses = []
-    pickeds = []
-    n_evaleds = []
-
-    picked = np.zeros(N, dtype=bool)
-
-    for n in progress()(ns):
-        indices, n_evaled = pick(n)
-        picked.fill(False)
-        picked[indices] = True
-        rmse = nys_error(K, picked)
-
-        pickeds.append(picked.copy())
-        n_evaleds.append(n_evaled)
-        rmses.append(rmse)
-
-    return pd.DataFrame({
-        'n_picked': ns,
-        'n_evaled': n_evaleds,
-        'rmse': rmses,
-        'picked': pickeds,
-    })
-
-
 def pick_kmeans(x, n):
     # NOTE: doesn't make sense to do this iteratively
     # run k-means clustering
@@ -369,6 +371,9 @@ def run_kmeans(K, X, start_n=5, max_n=None, step_size=1):
                             start_n=start_n, max_n=max_n, step_size=step_size)
 
 
+################################################################################
+### Kernel k-means
+
 def pick_kernel_kmeans(K, n):
     from .kmeans import KernelKMeans
     km = KernelKMeans(n_clusters=n, kernel='precomputed')
@@ -386,6 +391,106 @@ def pick_kernel_kmeans(K, n):
 def run_kernel_kmeans(K, start_n=5, max_n=None, step_size=1):
     return _run_nys_noniter(K, partial(pick_kmeans, K),
                             start_n=start_n, max_n=max_n, step_size=step_size)
+
+
+################################################################################
+### Pick according to the kmeans++ initialization criterion
+
+
+def init_kmeanspp(sq_dists, n):
+    N = sq_dists.shape[0]
+    picked = np.zeros(N, dtype=bool)
+    idx = np.random.choice(N)
+    picked[idx] = True
+
+    to_center = sq_dists[idx, :]
+
+    for i in xrange(1, n):
+        idx = np.random.choice(N, p=to_center / to_center.sum())
+        picked[idx] = True
+        np.minimum(to_center, sq_dists[idx, :], out=to_center)
+
+    return picked
+
+
+def kmeanspp_init_picker(sq_dists):
+    N = sq_dists.shape[0]
+    have_filled = [False]
+
+    def pick(picked, seen_pts):
+        if not have_filled[0]:
+            seen_pts.fill(True)
+            have_filled[0] = True
+
+        to_center = sq_dists[picked, :].min(axis=0)
+        to_center /= to_center.sum()
+        return np.random.choice(N, p=to_center)
+    return pick
+
+
+def run_kmeanspp_initonly(K, X, step_size=1, **kwargs):
+    assert step_size == 1
+    sq_dists = euclidean_distances(X, squared=True)
+    return _run_nys(K, kmeanspp_init_picker(sq_dists), **kwargs)
+
+
+def run_kernel_kmeanspp_initonly(K, step_size=1, **kwargs):
+    assert step_size == 1
+    sq_dists = get_squared_dists(K)
+    return _run_nys(K, kmeanspp_init_picker(sq_dists), **kwargs)
+
+
+################################################################################
+### Step-wise kmeans++
+
+# TODO: kernel version
+def run_kmeanspp_stepwise(K, X, step_size=1, **kwargs):
+    assert step_size == 1  # TODO: support having more than one new point
+
+    N = X.shape[0]
+    sq_norms = np.einsum('ij,ij->i', X, X)
+    sq_dist_to_X = partial(
+        euclidean_distances, Y=X, Y_norm_squared=sq_norms, squared=True)
+    sq_dists = sq_dist_to_X(X)
+
+    have_filled = [False]
+    def pick(picked, seen_pts):
+        if not have_filled[0]:
+            seen_pts.fill(True)
+            have_filled[0] = True
+
+        # ids of, distances to nearest fixed center
+        dist_to_fixed = sq_dists[picked, :]
+        nearest_fixed = dist_to_fixed.argmin(axis=0)
+        to_nearest_fixed = dist_to_fixed[nearest_fixed, xrange(N)]
+        del dist_to_fixed
+
+        # pick an initial new center according to kmeans++
+        idx = np.random.choice(N, p=to_nearest_fixed / to_nearest_fixed.sum())
+        new = X[idx]
+
+        # run k-means algorithm with all but one point fixed
+        old_new_is_better = True
+        new_is_better = False
+        while not np.all(old_new_is_better == new_is_better):
+            # distances to the means
+            dist_to_new = sq_dist_to_X(new).ravel()
+            new_is_better = dist_to_new < to_nearest_fixed
+
+            # reassign means
+            new = X[new_is_better].mean()
+
+            old_new_is_better = new_is_better
+
+        if not np.any(new_is_better):
+            print("WARNING: kmeanspp_stepwise: choosing randomly")
+            unpicked = ~picked
+            return np.random.choice(N, p=unpicked / unpicked.sum())
+
+        # pick the closest point to the new mean
+        return dist_to_new.argmin()
+
+    return _run_nys(K, pick, **kwargs)
 
 
 ################################################################################
