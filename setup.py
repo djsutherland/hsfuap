@@ -5,13 +5,17 @@ setup(
     version='0.1.0dev',
     author='Dougal J. Sutherland',
     author_email='dougal@gmail.com',
-    packages=['hsfuap',
-              'hsfuap.kernels',
-              'hsfuap.misc',
-              'hsfuap.plotting',
-              'hsfuap.sdm',
+    packages=[
+        'hsfuap',
+        'hsfuap.kernels',
+        'hsfuap.misc',
+        'hsfuap.plotting',
+        'hsfuap.sdm',
     ],
     description='Some miscellaneous utilities I find useful.',
+    install_requires=[
+        'humanize',
+    ],
     entry_points={
         'console_scripts': [
             'hsfuap-nystroem = hsfuap.kernels.nystroem:main',
