@@ -54,12 +54,13 @@ def cython_ext(extension, **kw):
 
 setup(
     name='hsfuap',
-    version='0.1.0dev2014.07.21.0',
+    version='0.1.0dev2014.07.21.1',
     author='Dougal J. Sutherland',
     author_email='dougal@gmail.com',
     url='https://github.com/dougalsutherland/hsfuap/',
     packages=[
         'hsfuap',
+        'hsfuap.io',
         'hsfuap.kde',
         'hsfuap.kernels',
         'hsfuap.misc',
