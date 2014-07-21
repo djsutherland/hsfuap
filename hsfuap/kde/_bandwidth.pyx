@@ -1,5 +1,6 @@
 cimport cython
-from cython.parallel cimport prange
+from cython.parallel cimport prange, threadid
+from cpython.exc cimport PyErr_CheckSignals
 
 import numpy as np
 cimport numpy as np
@@ -10,7 +11,7 @@ from sklearn.metrics.pairwise import pairwise_kernels
 @cython.cdivision(True)
 def next_C(float[:, ::1] feats, float[:, ::1] C, n_jobs=1):
     cdef int n = feats.shape[0], p = feats.shape[1]
-    cdef int i, j, k, l, kl
+    cdef int i, j, k, l, kl, tid
     cdef float[:, :] responsibility, new, C_chol
     
     C_chol = cholesky(C, lower=True)
@@ -30,9 +31,13 @@ def next_C(float[:, ::1] feats, float[:, ::1] C, n_jobs=1):
     for kl in prange(p * p, nogil=True, schedule='static', num_threads=n_jobs):
         k = kl % p
         l = kl // p
+        tid = threadid()
 
         for i in xrange(n):
             for j in xrange(n):
+                if threadid() == 0:
+                    with gil:
+                        PyErr_CheckSignals()
                 if j == i:
                     continue
                 for k in xrange(p):
