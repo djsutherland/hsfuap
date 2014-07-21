@@ -12,12 +12,11 @@ from sklearn.metrics.pairwise import pairwise_kernels
 def next_C(float[:, ::1] feats, float[:, ::1] C, n_jobs=1):
     cdef int n = feats.shape[0], p = feats.shape[1]
     cdef int i, j, k, l, kl, tid
-    cdef float[:, :] responsibility, new, C_chol
-    
-    C_chol = cholesky(C, lower=True)
-    K = pairwise_kernels(
-        solve_triangular(np.asarray(C_chol), np.asarray(feats).T, lower=True).T,
-        metric='rbf', gamma=.5)
+    cdef float[:, :] responsibility, new
+
+    chol_C_feats = solve_triangular(
+        cholesky(C, lower=True), np.asarray(feats).T, lower=True).T
+    K = pairwise_kernels(chol_C_feats, metric='rbf', gamma=.5)
     # this doesn't include the 1/sqrt(|2 pi C|) factor, but it cancels anyway
     
     # turn into "responsibilities" over n
