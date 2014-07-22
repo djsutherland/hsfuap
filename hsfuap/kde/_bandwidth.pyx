@@ -9,7 +9,7 @@ from sklearn.metrics.pairwise import pairwise_kernels
 
 @cython.boundscheck(False)
 @cython.cdivision(True)
-def next_C(float[:, ::1] feats, float[:, ::1] C, n_jobs=1):
+def next_C(float[:, ::1] feats, float[:, ::1] C, int n_jobs=1):
     cdef int n = feats.shape[0], p = feats.shape[1]
     cdef int i, j, k, l, kl, tid
     cdef float[:, :] responsibility, new
