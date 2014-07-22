@@ -39,8 +39,6 @@ def next_C(float[:, ::1] feats, float[:, ::1] C, n_jobs=1):
                         PyErr_CheckSignals()
                 if j == i:
                     continue
-                for k in xrange(p):
-                    for l in xrange(p):
-                        new[k, l] += (feats[i, k] - feats[j, k]) * (feats[i, l] - feats[j, l]) \
+                new[k, l] += (feats[i, k] - feats[j, k]) * (feats[i, l] - feats[j, l]) \
                                      * responsibility[i, j]
     return new
