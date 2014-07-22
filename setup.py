@@ -51,10 +51,9 @@ def cython_ext(extension, **kw):
     extension.sources[0] = c_path
     return extension
 
-
 setup(
     name='hsfuap',
-    version='0.1.0dev2014.07.21.1',
+    version='0.1.0dev2014.07.22.0',
     author='Dougal J. Sutherland',
     author_email='dougal@gmail.com',
     url='https://github.com/dougalsutherland/hsfuap/',
