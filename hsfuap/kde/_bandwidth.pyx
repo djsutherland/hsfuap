@@ -34,7 +34,7 @@ def next_C(float[:, ::1] feats, float[:, ::1] C, n_jobs=1):
 
         for i in xrange(n):
             for j in xrange(n):
-                if threadid() == 0:
+                if tid == 0:
                     with gil:
                         PyErr_CheckSignals()
                 if j == i:

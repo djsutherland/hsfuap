@@ -80,6 +80,9 @@ setup(
     ext_modules = [
         cython_ext(Extension('hsfuap.kde._bandwidth',
                              ['hsfuap/kde/_bandwidth.pyx'],
-                             include_dirs=[np.get_include()])),
+                             include_dirs=[np.get_include()],
+                             extra_compile_args=['-fopenmp'],
+                             extra_link_args=['-fopenmp'])),
     ],
+    zip_safe=False,
 )
