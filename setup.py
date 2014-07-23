@@ -51,9 +51,22 @@ def cython_ext(extension, **kw):
     extension.sources[0] = c_path
     return extension
 
+import datetime
+import subprocess
+try:
+    ts = subprocess.check_output([
+        'git',
+        '--git-dir', os.path.join(os.path.dirname(__file__), '.git'),
+        'log', '-n1', '--format=%ct']).decode().strip()
+    time = datetime.datetime.fromtimestamp(int(ts))
+    VERSION = '0.1.0dev{:%Y.%m.%d.%H.%M}'.format(time)
+except (ValueError, OSError, subprocess.CalledProcessError):
+    VERSION = '0.1.0dev'
+
+
 setup(
     name='hsfuap',
-    version='0.1.0dev2014.07.22.0',
+    version=VERSION,
     author='Dougal J. Sutherland',
     author_email='dougal@gmail.com',
     url='https://github.com/dougalsutherland/hsfuap/',
